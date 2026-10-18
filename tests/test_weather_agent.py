@@ -49,19 +49,23 @@ def test_weather_agent_success(mock_weather_tool, mock_llm):
     assert "Mumbai" in result["messages"][0]["content"]
 
 
-def test_weather_tool_missing_api_key_returns_helpful_error():
-    """Weather tool should fail gracefully when the API key is missing."""
-    with patch("src.config.get_settings") as mock_get_settings:
+def test_weather_tool_missing_api_key_uses_open_meteo_fallback():
+    """Weather tool should fall back to Open-Meteo when OpenWeatherMap key is missing."""
+    with patch("src.config.get_settings") as mock_get_settings, \
+         patch("src.tools.weather_tool._get_weather_open_meteo") as mock_open_meteo:
         mock_get_settings.return_value = type(
             "Settings",
             (),
             {"openweathermap_api_key": ""},
         )()
+        async def mock_fn(session, city):
+            return "### Weather in Mumbai, India\n* **Temperature:** 30°C"
+        mock_open_meteo.side_effect = mock_fn
 
         result = __import__("asyncio").run(get_weather.ainvoke({"city": "Mumbai"}))
 
-    assert "OPENWEATHERMAP_API_KEY" in result
-    assert "not configured" in result.lower()
+    assert "Mumbai" in result
+    assert "30°C" in result
 
 
 def test_weather_agent_no_city():
