@@ -1,17 +1,20 @@
 """Configuration settings for AskAtlas."""
 
 from typing import Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings
-from pydantic import Field, BaseModel
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
+    model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
     # API Keys
     openai_api_key: str = Field("", alias="OPENAI_API_KEY")
     google_api_key: str = Field("", alias="GOOGLE_API_KEY")
-    openweathermap_api_key: str = Field(..., alias="OPENWEATHERMAP_API_KEY")
+    openweathermap_api_key: str = Field("", alias="OPENWEATHERMAP_API_KEY")
 
     # LangSmith
     langchain_tracing_v2: bool = Field(True, alias="LANGCHAIN_TRACING_V2")
@@ -32,11 +35,6 @@ class Settings(BaseSettings):
 
     # Application
     pdf_path: str = Field("data/rag.pdf", alias="PDF_PATH")
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
 
 
 def get_settings() -> Settings:

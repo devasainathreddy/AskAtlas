@@ -40,7 +40,13 @@ Cities:"""
     
     # Parse multiple cities
     cities = [c.strip() for c in cities_text.split(",") if c.strip()]
-    
+
+    if not cities:
+        return {
+            "weather_result": "I couldn't identify a city in your weather query.",
+            "messages": [{"role": "assistant", "content": "No city could be extracted from the query"}],
+        }
+
     # Fetch weather for all cities
     weather_results = []
     for city in cities:
@@ -49,9 +55,9 @@ Cities:"""
             weather_results.append(result)
         except Exception as e:
             weather_results.append(f"Error fetching weather for {city}: {str(e)}")
-    
+
     combined_result = "\n\n".join(weather_results)
-    
+
     return {
         "weather_result": combined_result,
         "messages": [{"role": "assistant", "content": f"Weather data fetched for {', '.join(cities)}"}],

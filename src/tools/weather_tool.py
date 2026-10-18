@@ -22,18 +22,33 @@ async def get_weather(city: str) -> str:
         Formatted string with weather information
     """
     from src.config import get_settings
-    
+
     settings = get_settings()
-    api_key = settings.openweathermap_api_key
-    
+    api_key = (settings.openweathermap_api_key or "").strip()
+    normalized_key = api_key.lower()
+
+    placeholder_markers = (
+        "your_",
+        "placeholder",
+        "changeme",
+        "<your_key>",
+        "example",
+        "todo",
+    )
+    if not api_key or any(marker in normalized_key for marker in placeholder_markers):
+        return (
+            "OpenWeatherMap is not configured. Add a valid OPENWEATHERMAP_API_KEY to your "
+            ".env file to enable live weather lookups."
+        )
+
     url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
-    
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
                 if response.status == 200:
                     data = await response.json()
-                    
+
                     weather_info = {
                         "city": data["name"],
                         "country": data["sys"]["country"],
@@ -43,7 +58,7 @@ async def get_weather(city: str) -> str:
                         "description": data["weather"][0]["description"],
                         "wind_speed": data["wind"]["speed"],
                     }
-                    
+
                     return (
                         f"### Weather in {weather_info['city']}, {weather_info['country']}\n"
                         f"* **Temperature:** {weather_info['temperature']}°C (feels like {weather_info['feels_like']}°C)\n"
