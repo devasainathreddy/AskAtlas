@@ -1,5 +1,6 @@
 """Configuration settings for AskAtlas."""
 
+from functools import lru_cache
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,9 +38,20 @@ class Settings(BaseSettings):
     pdf_path: str = Field("data/rag.pdf", alias="PDF_PATH")
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+def _validate_api_key(provider: str, key: str) -> None:
+    """Validate that the required API key is present."""
+    k = (key or "").strip()
+    if not k or any(p in k.lower() for p in ["your_", "placeholder", "<your", "changeme"]):
+        provider_name = "Google Gemini (GOOGLE_API_KEY)" if provider == "google" else "OpenAI (OPENAI_API_KEY)"
+        raise ValueError(
+            f"{provider_name} is not configured. Please add your API key to .env or Streamlit Secrets."
+        )
 
 
 def get_llm(temperature: float = 0.0, format: Optional[str] = None):
@@ -65,6 +77,7 @@ def get_llm(temperature: float = 0.0, format: Optional[str] = None):
             kwargs["format"] = format
         return ChatOllama(**kwargs)
     elif settings.llm_provider == "google":
+        _validate_api_key("google", settings.google_api_key)
         from langchain_google_genai import ChatGoogleGenerativeAI
         return ChatGoogleGenerativeAI(
             model=settings.llm_model,
@@ -72,6 +85,7 @@ def get_llm(temperature: float = 0.0, format: Optional[str] = None):
             temperature=temperature,
         )
     else:
+        _validate_api_key("openai", settings.openai_api_key)
         from langchain_openai import ChatOpenAI
         return ChatOpenAI(
             model=settings.llm_model,
@@ -101,6 +115,7 @@ def get_llm_with_structured_output(schema: type[BaseModel], temperature: float =
         )
         return llm.with_structured_output(schema)
     elif settings.llm_provider == "google":
+        _validate_api_key("google", settings.google_api_key)
         from langchain_google_genai import ChatGoogleGenerativeAI
         llm = ChatGoogleGenerativeAI(
             model=settings.llm_model,
@@ -108,6 +123,7 @@ def get_llm_with_structured_output(schema: type[BaseModel], temperature: float =
             temperature=temperature,
         )
     else:
+        _validate_api_key("openai", settings.openai_api_key)
         from langchain_openai import ChatOpenAI
         llm = ChatOpenAI(
             model=settings.llm_model,

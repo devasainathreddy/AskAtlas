@@ -1,7 +1,6 @@
 """Qdrant vector store client and operations."""
 
-import torch
-from langchain_huggingface import HuggingFaceEmbeddings
+from functools import lru_cache
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams
@@ -12,21 +11,24 @@ from src.config import get_settings
 EMBEDDING_MODEL = "sentence-transformers/all-mpnet-base-v2"
 EMBEDDING_DIMENSION = 768  # all-mpnet-base-v2 produces 768-dim vectors
 
-# Device detection with fallback
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
+@lru_cache(maxsize=1)
+def get_embeddings():
+    """Get the embeddings model using sentence-transformers (cached)."""
+    import torch
+    from langchain_huggingface import HuggingFaceEmbeddings
 
-def get_embeddings() -> HuggingFaceEmbeddings:
-    """Get the embeddings model using sentence-transformers."""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     return HuggingFaceEmbeddings(
         model_name=EMBEDDING_MODEL,
-        model_kwargs={"device": DEVICE},
+        model_kwargs={"device": device},
         encode_kwargs={"normalize_embeddings": True},
     )
 
 
+@lru_cache(maxsize=1)
 def get_qdrant_client() -> QdrantClient:
-    """Get the Qdrant client."""
+    """Get the Qdrant client (cached)."""
     settings = get_settings()
     if settings.qdrant_api_key:
         return QdrantClient(url=settings.qdrant_url, api_key=settings.qdrant_api_key)
@@ -51,8 +53,9 @@ def ensure_collection_exists() -> None:
         print(f"Warning: Could not connect to Qdrant or initialize collection: {e}")
 
 
+@lru_cache(maxsize=1)
 def get_vector_store() -> QdrantVectorStore:
-    """Get the Qdrant vector store."""
+    """Get the Qdrant vector store (cached)."""
     settings = get_settings()
     ensure_collection_exists()
     

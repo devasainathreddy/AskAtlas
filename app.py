@@ -355,21 +355,25 @@ with st.sidebar:
     
     st.header("✦ Suggestions")
     
-    # Styled Suggestion Cards
-    suggestion_style = """
-    <div style="background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 8px; margin-bottom: 0.5rem; border: 1px solid var(--border-color); transition: all 0.2s; cursor: pointer;">
-        <div style="font-size: 0.7rem; text-transform: uppercase; color: var(--accent-primary); margin-bottom: 0.25rem;">{category}</div>
-        <div style="font-size: 0.9rem; color: var(--text-primary);">"{text}"</div>
-    </div>
-    """
-    
-    st.markdown(suggestion_style.format(category="General", text="Hello! How are you?"), unsafe_allow_html=True)
-    st.markdown(suggestion_style.format(category="Weather", text="Temperature in Mumbai?"), unsafe_allow_html=True)
-    st.markdown(suggestion_style.format(category="RAG", text="Explain embeddings"), unsafe_allow_html=True)
+    if st.button("💬 'Hello! How are you?'", use_container_width=True):
+        st.session_state.pending_prompt = "Hello! How are you?"
+        st.rerun()
+    if st.button("⛅ 'Temperature in Mumbai?'", use_container_width=True):
+        st.session_state.pending_prompt = "Temperature in Mumbai?"
+        st.rerun()
+    if st.button("📚 'Explain embeddings'", use_container_width=True):
+        st.session_state.pending_prompt = "Explain embeddings"
+        st.rerun()
     
     st.divider()
-    
-    if st.button("🗑️ Clear Chat"):
+
+    # API Key check banner
+    settings = get_settings()
+    has_api_key = bool((settings.google_api_key or "").strip() or (settings.openai_api_key or "").strip())
+    if not has_api_key:
+        st.warning("⚠️ No API key found. Add `GOOGLE_API_KEY` to your Streamlit Secrets.")
+
+    if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.messages = []
         st.rerun()
 
@@ -405,8 +409,15 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Chat input
-if prompt := st.chat_input("Ask about weather or documents..."):
+# Chat input or pending suggestion
+prompt = None
+if "pending_prompt" in st.session_state and st.session_state.pending_prompt:
+    prompt = st.session_state.pending_prompt
+    st.session_state.pending_prompt = None
+elif user_input := st.chat_input("Ask about weather or documents..."):
+    prompt = user_input
+
+if prompt:
     # Add user message to chat
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
