@@ -2,6 +2,8 @@
 torch
 sentence-transformers>=3.0.0
 streamlit>=1.40.0
+groq>=0.30.0
+langchain-groq>=1.1.0
 aiohttp>=3.10.0
 langchain>=1.2.0
 langchain-core

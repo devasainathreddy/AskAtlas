@@ -10,9 +10,21 @@ from dotenv import load_dotenv
 # Load environment variables from .env
 load_dotenv()
 
-# Inject Streamlit Cloud secrets into os.environ if running in cloud
+# Inject Streamlit Cloud / local secrets into os.environ
 try:
     if hasattr(st, "secrets"):
+        for k in [
+            "GROQ_API_KEY",
+            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
+            "OPENWEATHERMAP_API_KEY",
+            "LLM_PROVIDER",
+            "LLM_MODEL",
+            "QDRANT_URL",
+            "QDRANT_API_KEY",
+        ]:
+            if k in st.secrets and k not in os.environ:
+                os.environ[k] = str(st.secrets[k])
         for k, v in st.secrets.items():
             if isinstance(v, str) and k not in os.environ:
                 os.environ[k] = v
@@ -21,6 +33,51 @@ except Exception:
 
 from src.graph.workflow import run_query
 from src.config import get_settings
+
+
+def format_api_error(e: Exception) -> str:
+    """Format exceptions into user-friendly messages for quota, auth, and network errors."""
+    try:
+        import groq
+
+        if isinstance(e, groq.AuthenticationError):
+            return (
+                "🔑 **Authentication Error:** Invalid or missing Groq API Key. "
+                "Please verify `GROQ_API_KEY` in Streamlit secrets or your `.env` file."
+            )
+        elif isinstance(e, groq.RateLimitError):
+            return (
+                "⏳ **Quota / Rate Limit Exceeded:** You have reached Groq's free-tier rate limit (TPM/RPM). "
+                "Please wait a few seconds and try again."
+            )
+        elif isinstance(e, groq.APITimeoutError):
+            return "⏱️ **Timeout Error:** The Groq API request timed out. Please try again."
+        elif isinstance(e, groq.APIConnectionError):
+            return (
+                "🌐 **Network Error:** Could not connect to the Groq API servers. "
+                "Please check your internet connection."
+            )
+        elif isinstance(e, groq.GroqError):
+            return f"⚠️ **Groq API Error:** {str(e)}"
+    except ImportError:
+        pass
+
+    err_str = str(e).lower()
+    if "401" in err_str or "invalid api key" in err_str or "unauthorized" in err_str or "authentication" in err_str:
+        return (
+            "🔑 **Authentication Error:** Invalid Groq API Key. "
+            "Please check `GROQ_API_KEY` in Streamlit secrets or your `.env` file."
+        )
+    if "429" in err_str or "rate limit" in err_str or "quota" in err_str or "resource_exhausted" in err_str:
+        return (
+            "⏳ **Quota / Rate Limit Exceeded:** Groq free-tier rate limit reached. "
+            "Please wait a moment and try again."
+        )
+    if "connection" in err_str or "failed to connect" in err_str or "network" in err_str:
+        return "🌐 **Network Error:** Failed to establish connection to Groq API. Please check your network."
+
+    return f"❌ **Error:** {str(e)}"
+
 
 # Page configuration
 st.set_page_config(
@@ -231,9 +288,6 @@ st.markdown("""
         visibility: visible !important;
         background-color: transparent !important;
     }
-    
-    /* Optional: Hide the thin colored decoration line at the top if desired, 
-       but standard header visibility is prioritized for navigation. */
 
     /* 7. ALERTS & NOTIFICATIONS */
     .stAlert {
@@ -267,7 +321,6 @@ st.markdown("""
     
     /* Conditional Offset: Only shift if Sidebar is OPEN on Desktop */
     @media (min-width: 992px) {
-        /* Check if the sidebar section exists and is expanded */
         body:has(section[data-testid="stSidebar"][aria-expanded="true"]) .custom-footer {
             left: 21rem;
             width: calc(100% - 21rem);
@@ -301,10 +354,11 @@ with st.sidebar:
         settings = get_settings()
         # Visual styling for provider info
         provider_icon = {
+            "groq": "⚡",
             "openai": "🤖",
             "google": "🌌",
             "ollama": "🦙",
-        }[settings.llm_provider]
+        }.get(settings.llm_provider, "⚡")
         st.markdown(f"""
         <div style="display: flex; flex-direction: column; gap: 0.5rem;">
             <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
@@ -320,8 +374,8 @@ with st.sidebar:
         
     except Exception as e:
         st.error("Missing API Configuration")
-        st.code("OPENAI_API_KEY=...\nOPENWEATHERMAP_API_KEY=...", language="bash")
-    
+        st.code("GROQ_API_KEY=gsk_...", language="bash")
+
     st.divider()
 
     st.header("⚡ System Modules")
@@ -355,13 +409,13 @@ with st.sidebar:
     
     st.header("✦ Suggestions")
     
-    if st.button("💬 'Hello! How are you?'", use_container_width=True):
+    if st.button("💬 'Hello! How are you?'", use_container_width=True, disabled=st.session_state.get("is_processing", False)):
         st.session_state.pending_prompt = "Hello! How are you?"
         st.rerun()
-    if st.button("⛅ 'Temperature in Mumbai?'", use_container_width=True):
+    if st.button("⛅ 'Temperature in Mumbai?'", use_container_width=True, disabled=st.session_state.get("is_processing", False)):
         st.session_state.pending_prompt = "Temperature in Mumbai?"
         st.rerun()
-    if st.button("📚 'Explain embeddings'", use_container_width=True):
+    if st.button("📚 'Explain embeddings'", use_container_width=True, disabled=st.session_state.get("is_processing", False)):
         st.session_state.pending_prompt = "Explain embeddings"
         st.rerun()
     
@@ -369,17 +423,27 @@ with st.sidebar:
 
     # API Key check banner
     settings = get_settings()
-    has_api_key = bool((settings.google_api_key or "").strip() or (settings.openai_api_key or "").strip())
+    has_api_key = bool(
+        (settings.groq_api_key or "").strip()
+        or (settings.google_api_key or "").strip()
+        or (settings.openai_api_key or "").strip()
+    )
     if not has_api_key:
-        st.warning("⚠️ No API key found. Add `GOOGLE_API_KEY` to your Streamlit Secrets.")
+        st.warning("⚠️ No Groq API key found. Add `GROQ_API_KEY` to your Streamlit Secrets or `.env`.")
 
     if st.button("🗑️ Clear Chat", use_container_width=True):
         st.session_state.messages = []
+        st.session_state.is_processing = False
+        st.session_state.pending_prompt = None
         st.rerun()
 
-# Initialize chat history
+# Initialize chat history and state
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "is_processing" not in st.session_state:
+    st.session_state.is_processing = False
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
 
 # Empty State / Landing Visual
 if len(st.session_state.messages) == 0:
@@ -409,31 +473,33 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Chat input or pending suggestion
-prompt = None
-if "pending_prompt" in st.session_state and st.session_state.pending_prompt:
-    prompt = st.session_state.pending_prompt
+# Collect user prompt (preventing duplicate calls during reruns)
+new_prompt = None
+if st.session_state.pending_prompt:
+    new_prompt = st.session_state.pending_prompt
     st.session_state.pending_prompt = None
-elif user_input := st.chat_input("Ask about weather or documents..."):
-    prompt = user_input
+elif user_input := st.chat_input("Ask about weather or documents...", disabled=st.session_state.is_processing):
+    new_prompt = user_input
 
-if prompt:
-    # Add user message to chat
-    st.session_state.messages.append({"role": "user", "content": prompt})
+# Execute query safely without duplicate invocations
+if new_prompt and not st.session_state.is_processing:
+    st.session_state.is_processing = True
+    st.session_state.messages.append({"role": "user", "content": new_prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(new_prompt)
     
-    # Generate response
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+        with st.spinner("Thinking with Groq..."):
             try:
-                response = run_query(prompt)
+                response = run_query(new_prompt)
                 st.markdown(response)
                 st.session_state.messages.append({"role": "assistant", "content": response})
             except Exception as e:
-                error_msg = f"❌ Error: {str(e)}"
-                st.error(error_msg)
+                error_msg = format_api_error(e)
+                st.markdown(error_msg)
                 st.session_state.messages.append({"role": "assistant", "content": error_msg})
+            finally:
+                st.session_state.is_processing = False
 
 # Footer (Fixed)
 st.markdown(

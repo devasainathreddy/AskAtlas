@@ -7,10 +7,11 @@ from src.config import Settings
 def mock_settings():
     """Mock environment settings"""
     return Settings(
+        GROQ_API_KEY="gsk_test_groq_key",
         GOOGLE_API_KEY="test_key",
         OPENWEATHERMAP_API_KEY="test_weather_key",
-        LLM_PROVIDER="google",
-        LLM_MODEL="gemini-3.8-flash",
+        LLM_PROVIDER="groq",
+        LLM_MODEL="llama-3.3-70b-versatile",
         QDRANT_URL="http://localhost:6333",
         QDRANT_COLLECTION_NAME="test_collection"
     )

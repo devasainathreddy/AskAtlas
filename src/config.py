@@ -13,12 +13,13 @@ class Settings(BaseSettings):
     model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # API Keys
+    groq_api_key: str = Field("", alias="GROQ_API_KEY")
     openai_api_key: str = Field("", alias="OPENAI_API_KEY")
     google_api_key: str = Field("", alias="GOOGLE_API_KEY")
     openweathermap_api_key: str = Field("", alias="OPENWEATHERMAP_API_KEY")
 
     # LangSmith
-    langchain_tracing_v2: bool = Field(True, alias="LANGCHAIN_TRACING_V2")
+    langchain_tracing_v2: bool = Field(False, alias="LANGCHAIN_TRACING_V2")
     langchain_api_key: str = Field("", alias="LANGCHAIN_API_KEY")
     langchain_project: str = Field("AskAtlas", alias="LANGCHAIN_PROJECT")
 
@@ -30,8 +31,8 @@ class Settings(BaseSettings):
     )
 
     # LLM Configuration
-    llm_provider: Literal["openai", "google", "ollama"] = Field("google", alias="LLM_PROVIDER")
-    llm_model: str = Field("gemini-3.8-flash", alias="LLM_MODEL")
+    llm_provider: Literal["groq", "openai", "google", "ollama"] = Field("groq", alias="LLM_PROVIDER")
+    llm_model: str = Field("llama-3.3-70b-versatile", alias="LLM_MODEL")
     ollama_base_url: str = Field("http://localhost:11434", alias="OLLAMA_BASE_URL")
 
     # Application
@@ -48,10 +49,23 @@ def _validate_api_key(provider: str, key: str) -> None:
     """Validate that the required API key is present."""
     k = (key or "").strip()
     if not k or any(p in k.lower() for p in ["your_", "placeholder", "<your", "changeme"]):
-        provider_name = "Google Gemini (GOOGLE_API_KEY)" if provider == "google" else "OpenAI (OPENAI_API_KEY)"
+        names = {
+            "groq": "Groq (GROQ_API_KEY)",
+            "google": "Google Gemini (GOOGLE_API_KEY)",
+            "openai": "OpenAI (OPENAI_API_KEY)",
+        }
+        provider_name = names.get(provider, f"{provider.upper()} API key")
         raise ValueError(
-            f"{provider_name} is not configured. Please add your API key to .env or Streamlit Secrets."
+            f"{provider_name} is not configured. Please add your API key to Streamlit Secrets or .env file."
         )
+
+
+def get_groq_client():
+    """Get official Groq SDK client instance."""
+    from groq import Groq
+    settings = get_settings()
+    _validate_api_key("groq", settings.groq_api_key)
+    return Groq(api_key=settings.groq_api_key)
 
 
 def get_llm(temperature: float = 0.0, format: Optional[str] = None):
@@ -62,11 +76,19 @@ def get_llm(temperature: float = 0.0, format: Optional[str] = None):
         format: Output format ('json' for JSON mode on Ollama)
         
     Returns:
-        Configured LLM instance (OpenAI, Google, or Ollama)
+        Configured LLM instance (Groq, OpenAI, Google, or Ollama)
     """
     settings = get_settings()
     
-    if settings.llm_provider == "ollama":
+    if settings.llm_provider == "groq":
+        _validate_api_key("groq", settings.groq_api_key)
+        from langchain_groq import ChatGroq
+        return ChatGroq(
+            model=settings.llm_model,
+            api_key=settings.groq_api_key,
+            temperature=temperature,
+        )
+    elif settings.llm_provider == "ollama":
         from langchain_ollama import ChatOllama
         kwargs = {
             "model": settings.llm_model,
@@ -106,7 +128,16 @@ def get_llm_with_structured_output(schema: type[BaseModel], temperature: float =
     """
     settings = get_settings()
     
-    if settings.llm_provider == "ollama":
+    if settings.llm_provider == "groq":
+        _validate_api_key("groq", settings.groq_api_key)
+        from langchain_groq import ChatGroq
+        llm = ChatGroq(
+            model=settings.llm_model,
+            api_key=settings.groq_api_key,
+            temperature=temperature,
+        )
+        return llm.with_structured_output(schema)
+    elif settings.llm_provider == "ollama":
         from langchain_ollama import ChatOllama
         llm = ChatOllama(
             model=settings.llm_model,
@@ -122,6 +153,7 @@ def get_llm_with_structured_output(schema: type[BaseModel], temperature: float =
             google_api_key=settings.google_api_key,
             temperature=temperature,
         )
+        return llm.with_structured_output(schema)
     else:
         _validate_api_key("openai", settings.openai_api_key)
         from langchain_openai import ChatOpenAI
@@ -130,7 +162,7 @@ def get_llm_with_structured_output(schema: type[BaseModel], temperature: float =
             api_key=settings.openai_api_key,
             temperature=temperature,
         )
-    return llm.with_structured_output(schema)
+        return llm.with_structured_output(schema)
 
 
 def get_llm_with_tools(tools: list, temperature: float = 0.0):
